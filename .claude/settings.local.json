@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmake:*)",
+      "Bash(ctest:*)",
+      "Bash(./WinDevicesTests.exe:*)",
+      "Bash(./build/bin/Release/WinDevicesTests.exe:*)",
+      "Bash(cmd //c \"install.cmd --help\")",
+      "Bash(cmd //c \".\\\\install.cmd --help\")",
+      "Bash(cmd //c \".\\\\install.cmd --build-only\")",
+      "Bash(cmd //c \"build-and-test.cmd --help\")",
+      "Bash(cmd //c \".\\\\build-and-test.cmd --help\")",
+      "Bash(cmd //c \"build-and-test.cmd debug\")",
+      "Bash(cmd //c \".\\\\build-and-test.cmd debug\")",
+      "Bash(cmd //c \".\\\\build-and-test.cmd debug --no-test --install\")",
+      "Bash(dir:*)",
+      "Bash(gh run view:*)",
+      "Bash(git checkout:*)"
+    ]
+  }
+}

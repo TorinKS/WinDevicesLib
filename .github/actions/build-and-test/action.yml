@@ -1,0 +1,177 @@
+name: 'Build and Test'
+description: 'Builds WinDevices library (Debug + Release) and runs tests'
+
+inputs:
+  build-type:
+    description: 'Build configuration (Debug or Release) - both are always built'
+    required: false
+    default: 'Debug'
+  enable-testing:
+    description: 'Enable running unit tests'
+    required: false
+    default: 'true'
+  enable-e2e-tests:
+    description: 'Enable building E2E tests (requires hardware)'
+    required: false
+    default: 'false'
+  upload-artifacts:
+    description: 'Whether to upload build artifacts'
+    required: false
+    default: 'false'
+  artifact-name:
+    description: 'Name for uploaded artifacts'
+    required: false
+    default: 'build-artifacts'
+  upload-test-results:
+    description: 'Whether to upload test results'
+    required: false
+    default: 'false'
+  test-results-name:
+    description: 'Name for uploaded test results'
+    required: false
+    default: 'test-results'
+  publish-test-results:
+    description: 'Whether to publish test results to PR'
+    required: false
+    default: 'false'
+
+outputs:
+  build-path:
+    description: 'Path to the build directory'
+    value: ${{ steps.build-info.outputs.build-path }}
+  binary-path:
+    description: 'Path to the binary directory'
+    value: ${{ steps.build-info.outputs.binary-path }}
+  test-executable:
+    description: 'Path to the test executable'
+    value: ${{ steps.build-info.outputs.test-executable }}
+  tests-passed:
+    description: 'Whether all tests passed'
+    value: ${{ steps.run-tests.outputs.tests-passed }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup CMake
+      uses: jwlawson/actions-setup-cmake@v1.14
+      with:
+        cmake-version: '3.29'
+
+    - name: Configure CMake
+      shell: cmd
+      run: |
+        echo Configuring CMake with tests enabled...
+        cmake -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON -DBUILD_E2E_TESTS=OFF -DENABLE_COVERAGE=OFF
+        if errorlevel 1 (
+          echo CMake configuration failed
+          exit /b 1
+        )
+        echo CMake configuration completed
+
+    - name: Build Debug
+      shell: cmd
+      run: |
+        echo Building Debug configuration...
+        cmake --build build --config Debug --parallel
+        if errorlevel 1 (
+          echo Debug build failed
+          exit /b 1
+        )
+        echo Debug build completed successfully
+
+    - name: Build Release
+      shell: cmd
+      run: |
+        echo Building Release configuration...
+        cmake --build build --config Release --parallel
+        if errorlevel 1 (
+          echo Release build failed
+          exit /b 1
+        )
+        echo Release build completed successfully
+
+    - name: Run Tests
+      id: run-tests
+      if: ${{ inputs.enable-testing == 'true' }}
+      shell: cmd
+      run: |
+        echo Running tests...
+        echo.
+        echo Looking for test executable...
+
+        if exist "build\bin\Debug\WinDevicesTests.exe" (
+          echo Found: build\bin\Debug\WinDevicesTests.exe
+          build\bin\Debug\WinDevicesTests.exe --gtest_output=xml:test-results.xml
+        ) else if exist "build\bin\WinDevicesTests.exe" (
+          echo Found: build\bin\WinDevicesTests.exe
+          build\bin\WinDevicesTests.exe --gtest_output=xml:test-results.xml
+        ) else (
+          echo ERROR: WinDevicesTests.exe not found
+          echo.
+          echo Contents of build\bin:
+          dir /s build\bin
+          exit /b 1
+        )
+
+        if errorlevel 1 (
+          echo Tests failed
+          echo tests-passed=false>> %GITHUB_OUTPUT%
+          exit /b 1
+        )
+
+        echo All tests passed
+        echo tests-passed=true>> %GITHUB_OUTPUT%
+
+    - name: Set build information outputs
+      id: build-info
+      shell: powershell
+      run: |
+        $buildPath = "build"
+        $binaryPath = "build\bin"
+
+        Write-Host "Build directory: $buildPath"
+
+        if (Test-Path "build\bin\Debug") {
+          Write-Host "Debug build contents:"
+          Get-ChildItem "build\bin\Debug" | ForEach-Object { Write-Host "  $($_.Name)" }
+          $testExe = "build\bin\Debug\WinDevicesTests.exe"
+        } elseif (Test-Path "build\bin") {
+          Write-Host "Build bin contents:"
+          Get-ChildItem "build\bin" | ForEach-Object { Write-Host "  $($_.Name)" }
+          $testExe = "build\bin\WinDevicesTests.exe"
+        } else {
+          $testExe = ""
+        }
+
+        if (Test-Path "build\bin\Release") {
+          Write-Host "Release build contents:"
+          Get-ChildItem "build\bin\Release" | ForEach-Object { Write-Host "  $($_.Name)" }
+        }
+
+        "build-path=$buildPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "binary-path=$binaryPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "test-executable=$testExe" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+    - name: Upload Build Artifacts
+      if: ${{ inputs.upload-artifacts == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          build/bin/
+          build/lib/
+          include/
+          build/include/
+        retention-days: 30
+        if-no-files-found: warn
+
+    - name: Upload Test Results Artifacts
+      if: ${{ inputs.upload-test-results == 'true' && inputs.enable-testing == 'true' && always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.test-results-name }}
+        path: |
+          test-results.xml
+          build/Testing/
+        retention-days: 30
+        if-no-files-found: warn

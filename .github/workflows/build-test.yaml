@@ -1,0 +1,109 @@
+name: Build and Test
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        config: [Debug, Release]
+      fail-fast: false
+
+    permissions:
+      contents: read
+      actions: read
+      checks: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v1.14
+        with:
+          cmake-version: '3.29'
+
+      - name: Configure CMake
+        shell: cmd
+        run: |
+          echo Configuring CMake for ${{ matrix.config }}...
+          cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DBUILD_TESTS=ON -DBUILD_E2E_TESTS=OFF -DENABLE_COVERAGE=OFF
+          if errorlevel 1 exit /b 1
+
+      - name: Build
+        shell: cmd
+        run: |
+          echo Building ${{ matrix.config }} configuration...
+          cmake --build build --config ${{ matrix.config }} --parallel
+          if errorlevel 1 exit /b 1
+
+      - name: Run Tests
+        shell: cmd
+        run: |
+          echo Running tests for ${{ matrix.config }}...
+          if exist "build\bin\${{ matrix.config }}\WinDevicesTests.exe" (
+            build\bin\${{ matrix.config }}\WinDevicesTests.exe --gtest_output=xml:test-results-${{ matrix.config }}.xml
+          ) else if exist "build\bin\WinDevicesTests.exe" (
+            build\bin\WinDevicesTests.exe --gtest_output=xml:test-results-${{ matrix.config }}.xml
+          ) else (
+            echo ERROR: WinDevicesTests.exe not found
+            dir /s build\bin
+            exit /b 1
+          )
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.config }}
+          path: test-results-${{ matrix.config }}.xml
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.config }}
+          path: |
+            build/bin/${{ matrix.config }}/
+            build/lib/${{ matrix.config }}/
+          retention-days: 30
+          if-no-files-found: warn
+
+  summary:
+    needs: build
+    runs-on: windows-latest
+    if: always()
+    steps:
+      - name: Build Summary
+        shell: powershell
+        run: |
+          Write-Host "=== Build Summary ==="
+          Write-Host "Debug build: ${{ needs.build.result }}"
+          Write-Host "Release build: ${{ needs.build.result }}"
+
+          if ("${{ needs.build.result }}" -eq "success") {
+            Write-Host ""
+            Write-Host "All builds completed successfully!"
+          } else {
+            Write-Host ""
+            Write-Host "Some builds failed. Check the logs above."
+            exit 1
+          }

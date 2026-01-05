@@ -1,0 +1,13 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/WinDevicesTargets.cmake")
+
+# Set the include directories
+set_and_check(WinDevices_INCLUDE_DIRS "${PACKAGE_PREFIX_DIR}/include")
+
+# For compatibility with different naming conventions
+set(WinDevices_INCLUDE_DIR ${WinDevices_INCLUDE_DIRS})
+set(WINDEVICES_INCLUDE_DIRS ${WinDevices_INCLUDE_DIRS})
+
+# Check that the library was found
+check_required_components(WinDevices)
